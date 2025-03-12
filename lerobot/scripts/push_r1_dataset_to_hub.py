@@ -38,25 +38,21 @@ def create_r1_features_for_lerobot() -> dict:
     # Action is another 1D vector (18).
     # Timestamp is scalar (1).
     return {
-        "timestamp": {
-            "dtype": "float32",
-            "shape": [1],
-        },
         # Robot state
         "observation.state": {
             "dtype": "float32",
-            "shape": [21],  # base + torso + left arm + left gripper + right arm + right gripper
+            "shape": (21,),  # base + torso + left arm + left gripper + right arm + right gripper
         },
         # Robot action
         "action": { # for lerobot implementation
         # "actions": { # for pi0 Jax implementation
             "dtype": "float32",
-            "shape": [21],
+            "shape": (21,),
         }, 
         # Cameras as 'video' => will become MP4 if you run ds.consolidate(...).
         "observation.images.head": {
             "dtype": "video",
-            "shape": [3, 94, 168],  # Keep original [C, H, W] shape
+            "shape": (3, 94, 168),  # Keep original [C, H, W] shape
             "names": ["channels", "height", "width"],  # Adjust names to match shape order
             "info": {
                 "video.fps": 30.0,
@@ -71,7 +67,7 @@ def create_r1_features_for_lerobot() -> dict:
         },
         "observation.images.left_wrist": {
             "dtype": "video",
-            "shape": [3, 94, 168],
+            "shape": (3, 94, 168),
             "names": ["channels", "height", "width"],
             "info": {
                 "video.fps": 30.0,
@@ -86,7 +82,7 @@ def create_r1_features_for_lerobot() -> dict:
         },
         "observation.images.right_wrist": {
             "dtype": "video",
-            "shape": [3, 94, 168],
+            "shape": (3, 94, 168),
             "names": ["channels", "height", "width"],
             "info": {
                 "video.fps": 30.0,
@@ -99,6 +95,7 @@ def create_r1_features_for_lerobot() -> dict:
                 "has_audio": False
             }
         },
+        
         # You could add more if needed...
     }
 
@@ -214,7 +211,7 @@ def add_episode_from_hdf5(
             right_pos[t], #(6,)
             right_gripper_pos[t:t+1], #(1,)
         ], axis=0)
-        frame_data["observation.state"] = np.array(state_vec, dtype=np.float32)
+        frame_data["observation.state"] = np.array(state_vec, dtype=np.float32).flatten()
 
         # 3.3) Action vector
         act_vec = np.concatenate([
@@ -225,17 +222,19 @@ def add_episode_from_hdf5(
             right_arm_action[t], #(6,)
             right_gripper_action[t:t+1], #(1,)
         ], axis=0)
-        frame_data["action"] = np.array(act_vec, dtype=np.float32) # for lerobot implementation
+        frame_data["action"] = np.array(act_vec, dtype=np.float32).flatten() # for lerobot implementation
         # frame_data["actions"] = np.array(act_vec, dtype=np.float32) # for lerobot implementation
 
         # 3.4) Timestamp
-        frame_data["timestamp"] = float(t) / fps
+        frame_data["timestamp"] = np.array(float(t) / fps, dtype=np.float32)[np.newaxis]
+
+        frame_data["task"] = task_name
 
         # 3.5) Add the frame
         ds.add_frame(frame_data)
 
     # 4) Finalize the episode
-    ds.save_episode(task=task_name, encode_videos=False)
+    ds.save_episode()
     #    (If you want immediate .mp4 encoding, do encode_videos=True instead)
     #    Typically, you'd do ds.consolidate(...) once at the very end for all episodes
 
@@ -300,7 +299,8 @@ def main(normalize=False):
     features = create_r1_features_for_lerobot()
     # from IPython import embed; embed(); exit(0)
 
-    repo_id = "Yiheyihe/galaxea-r1-shelf-full-normalized"
+    repo_id = "s-tian/galaxea-r1-shelf-full-normalized_pc"
+    # repo_id = "Yiheyihe/galaxea-r1-shelf-full-normalized"
     # repo_id = "Yiheyihe/galaxea-r1-shelf-debug-normalized"
     # repo_id = "Yiheyihe/galaxea-r1-shelf-debug-pi0Jax"
     ds = LeRobotDataset.create(
@@ -310,19 +310,23 @@ def main(normalize=False):
         features=features,
         use_videos=True,
     )
+    # ds = LeRobotDataset(
+    #     repo_id=repo_id,
+    #     root="/viscam/u/stian/lerobot/s-tian/galaxea-r1-shelf-full-normalized",
+    # )
 
-    raw_dir = Path("/svl/u/yihetang/lerobot/data/galaxea_r1")
+    # raw_dir = Path("/viscam/projects/3dvla/")
 
-    dataset_path = Path(os.path.join("/svl/u/yihetang/lerobot/.hf_cache/lerobot/", repo_id))
-    # remove the dataset_path if it exists
-    if dataset_path.exists():
-        print(f"Removing existing dataset at {dataset_path}")
-        shutil.rmtree(dataset_path)
+    # dataset_path = Path(os.path.join("/svl/u/stian/lerobot/.hf_cache/lerobot/", repo_id))
+    # # remove the dataset_path if it exists
+    # if dataset_path.exists():
+    #     print(f"Removing existing dataset at {dataset_path}")
+    #     shutil.rmtree(dataset_path)
 
     convert_single_hdf5_to_lerobot(raw_dir, ds, normalize=normalize)
 
     # from IPython import embed; embed(); exit(0)
-    ds.consolidate()
+    # ds.consolidate()
     ds.push_to_hub()
 
     
