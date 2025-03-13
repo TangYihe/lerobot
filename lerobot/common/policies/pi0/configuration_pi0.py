@@ -33,6 +33,7 @@ class PI0Config(PreTrainedConfig):
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
             "VISUAL": NormalizationMode.IDENTITY,
+            "POINTCLOUD": NormalizationMode.IDENTITY,
             "STATE": NormalizationMode.MEAN_STD,
             "ACTION": NormalizationMode.MEAN_STD,
         }
@@ -48,6 +49,9 @@ class PI0Config(PreTrainedConfig):
     # Add empty images. Used by pi0_aloha_sim which adds the empty
     # left and right wrist cameras in addition to the top camera.
     empty_cameras: int = 0
+
+    # Use 3D
+    use_3d: bool = True
 
     # Converts the joint and gripper values from the standard Aloha space to
     # the space used by the pi internal runtime which was used to train the base model.
@@ -147,3 +151,7 @@ class PI0Config(PreTrainedConfig):
     @property
     def reward_delta_indices(self) -> None:
         return None
+
+    @property
+    def pointcloud_features(self) -> dict[str, PolicyFeature]:
+        return {key: ft for key, ft in self.input_features.items() if ft.type is FeatureType.POINTCLOUD}

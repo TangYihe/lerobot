@@ -308,15 +308,23 @@ class PI0Policy(PreTrainedPolicy):
 
         batch = self.normalize_inputs(batch)
         batch = self.normalize_targets(batch)
-
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
         lang_tokens, lang_masks = self.prepare_language(batch)
         actions = self.prepare_action(batch)
         actions_is_pad = batch.get("actions_is_pad")
 
+        # prepare PCs if necessary
+        if self.config.use_3d:
+            pointclouds, pointcloud_masks = self.prepare_pointclouds(batch)
+
         loss_dict = {}
-        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+        if self.config.use_3d:
+            losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, 
+            state, actions, pointclouds=pointclouds, pointcloud_masks=pointcloud_masks, noise=noise, time=time)
+        else:
+            losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+
         loss_dict["losses_after_forward"] = losses.clone()
 
         if actions_is_pad is not None:
@@ -377,6 +385,30 @@ class PI0Policy(PreTrainedPolicy):
             img_masks.append(mask)
 
         return images, img_masks
+
+    def prepare_pointclouds(self, batch):
+        present_pc_keys = [key for key in self.config.pointcloud_features if key in batch]
+        missing_pc_keys = [key for key in self.config.image_features if key not in batch]
+        assert len(missing_pc_keys) == 0, "Some pointcloud keys are missing from this batch, please fix"
+        
+        # any preprocessing can happen here
+        pc_xyz_keys = [k for k in present_pc_keys if "xyz" in k]
+        pc_rgb_keys = [k for k in present_pc_keys if "rgb" in k]
+        pc_mask_keys = [k for k in present_pc_keys if "padding_mask" in k]
+        assert len(pc_xyz_keys) == 1, f"Expected only one feature with pointcloud in its name and also xyz, found {len(pc_xyz)}"
+        assert len(pc_rgb_keys) == 1, f"Expected only one feature with pointcloud in its name and also rgb, found {len(pc_rgb)}"
+        assert len(pc_mask_keys) == 1, f"Expected only one feature with pointcloud in its name and also mask, found {len(pc_mask)}"
+
+        pc_xyz = batch[pc_xyz_keys[0]] # (B, N_points, 3)
+        pc_rgb = batch[pc_rgb_keys[0]] # (B, N_points, 3)
+
+        # (B, N_points, 6)
+        pointcloud_xyzrgb = torch.cat((pc_xyz, pc_rgb), dim=-1)
+
+        pc_mask = batch[pc_mask_keys[0]]
+
+        return pointcloud_xyzrgb, pc_mask
+
 
     def prepare_language(self, batch) -> tuple[Tensor, Tensor]:
         """Tokenize the text input"""
@@ -504,7 +536,7 @@ class PI0FlowMatching(nn.Module):
         return time.to(dtype=torch.float32, device=device)
 
     def embed_prefix(
-        self, images, img_masks, lang_tokens, lang_masks
+        self, images, img_masks, lang_tokens, lang_masks, pointclouds, pointcloud_masks
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Embed images with SigLIP and language tokens with embedding layer to prepare
         for PaliGemma transformer processing.
@@ -609,8 +641,9 @@ class PI0FlowMatching(nn.Module):
         return embs, pad_masks, att_masks
 
     def forward(
-        self, images, img_masks, lang_tokens, lang_masks, state, actions, noise=None, time=None
+        self, images, img_masks, lang_tokens, lang_masks, state, actions, pointclouds=None, pointcloud_masks=None, noise=None, time=None
     ) -> Tensor:
+        breakpoint()
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
             noise = self.sample_noise(actions.shape, actions.device)
@@ -623,8 +656,9 @@ class PI0FlowMatching(nn.Module):
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
-            images, img_masks, lang_tokens, lang_masks
+            images, img_masks, lang_tokens, lang_masks, pointclouds, pointcloud_masks
         )
+
         suffix_embs, suffix_pad_masks, suffix_att_masks = self.embed_suffix(state, x_t, time)
 
         pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
