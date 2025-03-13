@@ -95,7 +95,18 @@ def create_r1_features_for_lerobot() -> dict:
                 "has_audio": False
             }
         },
-        
+        "observation.pointcloud.xyz": {
+            "dtype": "float32",
+            "shape": (4096, 3), # all pointclouds have already been downsampled to 4096
+        },
+        "observation.pointcloud.rgb": {
+            "dtype": "uint8",
+            "shape": (4096, 3), # all pointclouds have already been downsampled to 4096
+        },
+        "observation.pointcloud.padding_mask": {
+            "dtype": "bool",
+            "shape": (4096,), # all pointclouds have already been downsampled to 4096
+        }
         # You could add more if needed...
     }
 
@@ -186,6 +197,10 @@ def add_episode_from_hdf5(
     left_wrist_imgs = ep_group['obs/rgb/left_wrist/img'][:]
     right_wrist_imgs = ep_group['obs/rgb/right_wrist/img'][:]
 
+    pc_xyz = ep_group['obs/point_cloud/fused/xyz'][:]
+    pc_rgb = ep_group['obs/point_cloud/fused/rgb'][:]
+    pc_padding_mask = ep_group['obs/point_cloud/fused/padding_mask'][:]
+
     # 3) For each frame, build a dictionary & call ds.add_frame(...)
     for t in range(num_frames):
         frame_data = {}
@@ -195,6 +210,10 @@ def add_episode_from_hdf5(
         frame_data["observation.images.head"] = np.transpose(head_imgs[t], (2,0,1))
         frame_data["observation.images.left_wrist"] = np.transpose(left_wrist_imgs[t], (2,0,1))
         frame_data["observation.images.right_wrist"] = np.transpose(right_wrist_imgs[t], (2,0,1))
+
+        frame_data["observation.pointcloud.xyz"] = pc_xyz[t]
+        frame_data["observation.pointcloud.rgb"] = pc_rgb[t]
+        frame_data["observation.pointcloud.padding_mask"] = pc_padding_mask[t]
 
         # 3.2) State vector
         # e.g. concat left_pos[t], right_pos[t], torso_pos[t]
@@ -315,7 +334,7 @@ def main(normalize=False):
     #     root="/viscam/u/stian/lerobot/s-tian/galaxea-r1-shelf-full-normalized",
     # )
 
-    # raw_dir = Path("/viscam/projects/3dvla/")
+    raw_dir = Path("/viscam/projects/3dvla/")
 
     # dataset_path = Path(os.path.join("/svl/u/stian/lerobot/.hf_cache/lerobot/", repo_id))
     # # remove the dataset_path if it exists
