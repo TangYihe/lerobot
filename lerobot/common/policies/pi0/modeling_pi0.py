@@ -284,12 +284,14 @@ class PI0Policy(PreTrainedPolicy):
             else:
                 images, img_masks = None, None 
 
-            state = self.prepare_state(batch)
-            lang_tokens, lang_masks = self.prepare_language(batch)
-
-            # prepare PCs if necessary
+            # Add similar handling for pointclouds
             if self.config.use_3d:
                 pointclouds, pointcloud_masks = self.prepare_pointclouds(batch)
+            else:
+                pointclouds, pointcloud_masks = None, None
+
+            state = self.prepare_state(batch)
+            lang_tokens, lang_masks = self.prepare_language(batch)
 
             actions = self.model.sample_actions(
                 images, img_masks, lang_tokens, lang_masks, state, pointclouds=pointclouds, pointcloud_masks=pointcloud_masks, noise=noise
@@ -727,7 +729,7 @@ class PI0FlowMatching(nn.Module):
         losses = F.mse_loss(u_t, v_t, reduction="none")
         return losses
 
-    def sample_actions(self, images, img_masks, lang_tokens, lang_masks, state, noise=None) -> Tensor:
+    def sample_actions(self, images, img_masks, lang_tokens, lang_masks, state, pointclouds=None, pointcloud_masks=None, noise=None) -> Tensor:
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
         device = state.device
@@ -737,7 +739,7 @@ class PI0FlowMatching(nn.Module):
             noise = self.sample_noise(actions_shape, device)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
-            images, img_masks, lang_tokens, lang_masks
+            images, img_masks, lang_tokens, lang_masks, pointclouds, pointcloud_masks
         )
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
