@@ -52,6 +52,7 @@ class PI0Config(PreTrainedConfig):
 
     # Use 3D
     use_3d: bool = True
+    use_2d: bool = False 
 
     # Converts the joint and gripper values from the standard Aloha space to
     # the space used by the pi internal runtime which was used to train the base model.
@@ -78,6 +79,7 @@ class PI0Config(PreTrainedConfig):
     freeze_vision_encoder: bool = True
     train_expert_only: bool = False
     train_state_proj: bool = True
+    train_pointcloud_adapter: bool = True
 
     # Training presets
     optimizer_lr: float = 2.5e-5

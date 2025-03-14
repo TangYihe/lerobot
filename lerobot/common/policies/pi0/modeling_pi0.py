@@ -51,6 +51,7 @@ policy = Pi0Policy.from_pretrained("lerobot/pi0")
 
 import math
 from collections import deque
+import re
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -278,12 +279,20 @@ class PI0Policy(PreTrainedPolicy):
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
         if len(self._action_queue) == 0:
-            images, img_masks = self.prepare_images(batch)
+            if self.config.use_2d:
+                images, img_masks = self.prepare_images(batch)
+            else:
+                images, img_masks = None, None 
+
             state = self.prepare_state(batch)
             lang_tokens, lang_masks = self.prepare_language(batch)
 
+            # prepare PCs if necessary
+            if self.config.use_3d:
+                pointclouds, pointcloud_masks = self.prepare_pointclouds(batch)
+
             actions = self.model.sample_actions(
-                images, img_masks, lang_tokens, lang_masks, state, noise=noise
+                images, img_masks, lang_tokens, lang_masks, state, pointclouds=pointclouds, pointcloud_masks=pointcloud_masks, noise=noise
             )
 
             # Unpad actions
@@ -308,7 +317,12 @@ class PI0Policy(PreTrainedPolicy):
 
         batch = self.normalize_inputs(batch)
         batch = self.normalize_targets(batch)
-        images, img_masks = self.prepare_images(batch)
+
+        if self.config.use_2d:
+            images, img_masks = self.prepare_images(batch)
+        else:
+            images, img_masks = None, None
+
         state = self.prepare_state(batch)
         lang_tokens, lang_masks = self.prepare_language(batch)
         actions = self.prepare_action(batch)
@@ -401,6 +415,10 @@ class PI0Policy(PreTrainedPolicy):
 
         pc_xyz = batch[pc_xyz_keys[0]] # (B, N_points, 3)
         pc_rgb = batch[pc_rgb_keys[0]] # (B, N_points, 3)
+
+        if pc_rgb.max() < 2:
+            logger.warn("Normalizing pointcloud RGB although the values are already pretty small. You might be double normalizing.")
+        pc_rgb = pc_rgb / 255.
 
         # (B, N_points, 6)
         pointcloud_xyzrgb = torch.cat((pc_xyz, pc_rgb), dim=-1)
@@ -506,6 +524,16 @@ class PI0FlowMatching(nn.Module):
         )
         self.paligemma_with_expert = PaliGemmaWithExpertModel(paligemma_with_export_config)
 
+        if self.config.use_3d:
+            # initialize pointbert
+            from lerobot.common.multimodal_encoder.pointbert_encoder import PointBERT
+            self.pointcloud_encoder = PointBERT()
+            self.pointcloud_adapter = build_condition_adapter(
+                "mlp2x_gelu", 
+                self.pointcloud_encoder.point_backbone_config["backbone_output_dim"],
+                2048
+            )
+
         # Projections are float32
         self.state_proj = nn.Linear(self.config.max_state_dim, self.config.proj_width)
         self.action_in_proj = nn.Linear(self.config.max_action_dim, self.config.proj_width)
@@ -519,6 +547,9 @@ class PI0FlowMatching(nn.Module):
     def set_requires_grad(self):
         for params in self.state_proj.parameters():
             params.requires_grad = self.config.train_state_proj
+        if self.config.use_3d:
+            for params in self.pointcloud_adapter.parameters():
+                params.requires_grad = self.config.train_pointcloud_adapter
 
     def sample_noise(self, shape, device):
         noise = torch.normal(
@@ -546,26 +577,40 @@ class PI0FlowMatching(nn.Module):
         pad_masks = []
         att_masks = []
 
+        bsize = lang_tokens.shape[0]
+
         # TODO: remove for loop
-        for (
-            img,
-            img_mask,
-        ) in zip(images, img_masks, strict=False):
-            img_emb = self.paligemma_with_expert.embed_image(img)
-            img_emb = img_emb.to(dtype=torch.bfloat16)
+        if self.config.use_2d:
+            for (
+                img,
+                img_mask,
+            ) in zip(images, img_masks, strict=False):
+                img_emb = self.paligemma_with_expert.embed_image(img)
+                img_emb = img_emb.to(dtype=torch.bfloat16)
 
-            # Normalize image embeddings
-            img_emb_dim = img_emb.shape[-1]
-            img_emb = img_emb * torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
+                # Normalize image embeddings
+                img_emb_dim = img_emb.shape[-1]
+                img_emb = img_emb * torch.tensor(img_emb_dim**0.5, dtype=img_emb.dtype, device=img_emb.device)
 
-            bsize, num_img_embs = img_emb.shape[:2]
-            img_mask = img_mask[:, None].expand(bsize, num_img_embs)
+                bsize, num_img_embs = img_emb.shape[:2]
+                img_mask = img_mask[:, None].expand(bsize, num_img_embs)
 
-            embs.append(img_emb)
-            pad_masks.append(img_mask)
+                embs.append(img_emb)
+                pad_masks.append(img_mask)
 
-            # Create attention masks so that image tokens attend to each other
-            att_masks += [0] * num_img_embs
+                # Create attention masks so that image tokens attend to each other
+                att_masks += [0] * num_img_embs
+
+        if self.config.use_3d:
+            point_embed = self.pointcloud_encoder(pointclouds)
+            # use adapter layer to convert from last dim 384 to 2048 to match paligemma
+            point_embed = self.pointcloud_adapter(point_embed)
+            point_embed = point_embed.to(dtype=torch.bfloat16)
+            point_mask = torch.ones(point_embed.shape[:2], dtype=torch.bool, device=pointclouds.device)
+
+            embs.append(point_embed)
+            pad_masks.append(point_mask)
+            att_masks += [0] * point_embed.shape[1]
 
         lang_emb = self.paligemma_with_expert.embed_language_tokens(lang_tokens)
 
@@ -643,7 +688,6 @@ class PI0FlowMatching(nn.Module):
     def forward(
         self, images, img_masks, lang_tokens, lang_masks, state, actions, pointclouds=None, pointcloud_masks=None, noise=None, time=None
     ) -> Tensor:
-        breakpoint()
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
             noise = self.sample_noise(actions.shape, actions.device)
@@ -764,3 +808,23 @@ class PI0FlowMatching(nn.Module):
         suffix_out = suffix_out.to(dtype=torch.float32)
         v_t = self.action_out_proj(suffix_out)
         return v_t
+
+
+def build_condition_adapter(projector_type, in_features, out_features):
+    projector = None
+    if projector_type == 'linear':
+        projector = nn.Linear(in_features, out_features)
+    else:
+        mlp_gelu_match = re.match(r'^mlp(\d+)x_gelu$', projector_type)
+        if mlp_gelu_match:
+            mlp_depth = int(mlp_gelu_match.group(1))
+            modules = [nn.Linear(in_features, out_features)]
+            for _ in range(1, mlp_depth):
+                modules.append(nn.GELU(approximate="tanh"))
+                modules.append(nn.Linear(out_features, out_features))
+            projector = nn.Sequential(*modules)
+
+    if projector is None:
+        raise ValueError(f'Unknown projector type: {projector_type}')
+
+    return projector

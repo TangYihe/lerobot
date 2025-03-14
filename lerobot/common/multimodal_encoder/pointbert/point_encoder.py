@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 from timm.models.layers import DropPath
 from collections import OrderedDict
+import logging
 
 from lerobot.common.multimodal_encoder.pointbert.dvae import Group
 from lerobot.common.multimodal_encoder.pointbert.dvae import Encoder
-from lerobot.common.multimodal_encoder.pointbert.logger import print_log
+# from lerobot.common.multimodal_encoder.pointbert.logger import print_log
 from lerobot.common.multimodal_encoder.pointbert.checkpoint import get_missing_parameters_message, get_unexpected_parameters_message
 
 class Mlp(nn.Module):
@@ -151,20 +152,18 @@ class PointTransformer(nn.Module):
         incompatible = self.load_state_dict(state_dict, strict=False)
 
         if incompatible.missing_keys:
-            print_log('missing_keys', logger='Transformer')
-            print_log(
+            logging.warning('missing_keys')
+            logging.warning(
                 get_missing_parameters_message(incompatible.missing_keys),
-                logger='Transformer'
             )
         if incompatible.unexpected_keys:
-            print_log('unexpected_keys', logger='Transformer')
-            print_log(
+            logging.warning('unexpected_keys')
+            logging.warning(
                 get_unexpected_parameters_message(incompatible.unexpected_keys),
-                logger='Transformer'
             )
         if not incompatible.missing_keys and not incompatible.unexpected_keys:
             # * print successful loading
-            print_log("PointBERT's weights are successfully loaded from {}".format(bert_ckpt_path), logger='Transformer')
+            logging.info("PointBERT's weights are successfully loaded from {}".format(bert_ckpt_path))
 
     def forward(self, pts):
         # divide the point cloud in the same form. This is important

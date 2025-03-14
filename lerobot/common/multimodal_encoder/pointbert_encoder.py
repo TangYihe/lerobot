@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import os
+import sys
 import yaml
 from easydict import EasyDict
-from termcolor import cprint
+import logging
 from contextlib import nullcontext
 from lerobot.common.multimodal_encoder.pointbert.point_encoder import PointTransformer
 
@@ -52,7 +53,7 @@ class PointBERT(nn.Module):
         # address of config file, in the same dir of this file
         point_bert_config_name = config_v12 
         point_bert_config_addr = os.path.join(os.path.dirname(__file__), "pointbert", point_bert_config_name)
-        cprint(f"[PointBERT] Initializing PointBERT config from {point_bert_config_addr}.", "green")
+        logging.info(f"[PointBERT] Initializing PointBERT config from {point_bert_config_addr}.", "green")
         point_bert_config = cfg_from_yaml_file(point_bert_config_addr)
         if self.use_color:
             point_bert_config.model.point_dims = 6
@@ -71,10 +72,10 @@ class PointBERT(nn.Module):
         if point_bert_config.model.get('projection_hidden_layer', 0) > 0:
             self.point_backbone_config["projection_hidden_dim"] = point_bert_config.model.projection_hidden_dim # a list
         
-        cprint(f"[PointBERT] PointBERT config: {self.point_backbone_config}", "green")
+        logging.info(f"[PointBERT] PointBERT config: {self.point_backbone_config}", "green")
          
         self.load_point_backbone_checkpoint(self.ckpt_path)
-        cprint(f"[PointBERT] Loading PointBERT checkpoint from {self.ckpt_path}.", "green")
+        logging.info(f"[PointBERT] Loading PointBERT checkpoint from {self.ckpt_path}.", "green")
         
         if self.fix_pointnet:
             self.point_backbone.eval()
@@ -85,7 +86,7 @@ class PointBERT(nn.Module):
     
     def forward(self, point_cloud):
         with torch.no_grad() if self.fix_pointnet else nullcontext():
-            # cprint(f"[pointbert_encoder] sampled point_cloud: {point_cloud.shape}", "green")  
+            # logging.info(f"[pointbert_encoder] sampled point_cloud: {point_cloud.shape}", "green")  
             if self.fix_pointnet:
                 self.point_backbone.eval()
             if len(point_cloud.shape) == 3:
@@ -97,5 +98,5 @@ class PointBERT(nn.Module):
                 point_features = point_features.reshape(B, T*N, D)
             else:
                 raise ValueError(f"Invalid point cloud shape: {point_cloud.shape}")
-            # cprint(f"[pointbert_encoder] sampled point_features: {point_features.shape}", "green")
+            # logging.info(f"[pointbert_encoder] sampled point_features: {point_features.shape}", "green")
         return point_features
