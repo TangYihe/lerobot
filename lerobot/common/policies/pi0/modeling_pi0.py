@@ -404,7 +404,7 @@ class PI0Policy(PreTrainedPolicy):
 
     def prepare_pointclouds(self, batch):
         present_pc_keys = [key for key in self.config.pointcloud_features if key in batch]
-        missing_pc_keys = [key for key in self.config.image_features if key not in batch]
+        missing_pc_keys = [key for key in self.config.pointcloud_features if key not in batch]
         assert len(missing_pc_keys) == 0, "Some pointcloud keys are missing from this batch, please fix"
         
         # any preprocessing can happen here
