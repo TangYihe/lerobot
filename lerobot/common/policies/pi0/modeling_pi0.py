@@ -52,6 +52,7 @@ policy = Pi0Policy.from_pretrained("lerobot/pi0")
 import math
 from collections import deque
 import re
+import logging
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -417,9 +418,8 @@ class PI0Policy(PreTrainedPolicy):
 
         pc_xyz = batch[pc_xyz_keys[0]] # (B, N_points, 3)
         pc_rgb = batch[pc_rgb_keys[0]] # (B, N_points, 3)
-
         if pc_rgb.max() < 2:
-            logger.warn("Normalizing pointcloud RGB although the values are already pretty small. You might be double normalizing.")
+            logging.warning("Normalizing pointcloud RGB although the values are already pretty small. You might be double normalizing.")
         pc_rgb = pc_rgb / 255.
 
         # (B, N_points, 6)
