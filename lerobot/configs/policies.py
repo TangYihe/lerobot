@@ -173,4 +173,22 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
         # HACK: this is very ugly, ideally we'd like to be able to do that natively with draccus
         # something like --policy.path (in addition to --policy.type)
         cli_overrides = policy_kwargs.pop("cli_overrides", [])
-        return draccus.parse(cls, config_file, args=cli_overrides)
+        # separate any cli overrides that include "policy" in them
+        # remove the "policy" overrides from the cli overrides
+        cfg = draccus.parse(cls, config_file, args=[])
+        # for each cli override, set the value in the config
+        for override in cli_overrides:
+            # split on equals sign
+            key, value = override.split("=")
+            # remove "--"
+            from draccus import cfgparsing
+            key = key.replace("--", "")
+            value = cfgparsing.parse_string(value)
+            # set the value in the config
+            setattr(cfg, key, value)
+        # ST: The above is really hacky, I tried to add it so you can do CLI overrides of policy configs, if you have any issues with this, please revert to the original parsing, but you may need to manually set policy config values in the configuration dataclasses:
+        ### original parsing:
+        # cli_overrides = policy_kwargs.pop("cli_overrides", [])
+        # return draccus.parse(base_config.__class__, config_file, args=cli_overrides)
+        ### 
+        return cfg
