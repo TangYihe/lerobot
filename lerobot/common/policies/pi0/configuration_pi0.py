@@ -51,6 +51,7 @@ class PI0Config(PreTrainedConfig):
     empty_cameras: int = 0
 
     # Use 3D
+    # TODO Figure out how to assign these from command line during training
     use_3d: bool = False 
     use_2d: bool = True 
 
