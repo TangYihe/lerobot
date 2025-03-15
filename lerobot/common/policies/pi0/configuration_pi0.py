@@ -51,8 +51,8 @@ class PI0Config(PreTrainedConfig):
     empty_cameras: int = 0
 
     # Use 3D
-    use_3d: bool = True
-    use_2d: bool = False 
+    use_3d: bool = False 
+    use_2d: bool = True 
 
     # Converts the joint and gripper values from the standard Aloha space to
     # the space used by the pi internal runtime which was used to train the base model.

@@ -242,6 +242,9 @@ class PI0Policy(PreTrainedPolicy):
         super().__init__(config)
         config.validate_features()
         self.config = config
+        print("PI0: Use 2D: ", self.config.use_2d)
+        print("PI0: Use 3D: ", self.config.use_3d)
+
         self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
         self.normalize_targets = Normalize(
             config.output_features, config.normalization_mapping, dataset_stats
