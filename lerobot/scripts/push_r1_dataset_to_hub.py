@@ -11,6 +11,7 @@ import torch
 import h5py
 from pathlib import Path
 import shutil
+import argparse
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
@@ -173,9 +174,8 @@ def add_episode_from_hdf5(
     torso_action = ep_group['action/torso'][:]
     left_gripper_action = ep_group['action/left_gripper'][:] / 100.0 # normalize to 0-1
     right_gripper_action = ep_group['action/right_gripper'][:] / 100.0
-
     # state data
-    base_vel = ep_group['obs/odom/base_velocity'][:]
+    base_vel = ep_group['obs/odom/linear_velocity'][:]
     torso_pos = ep_group['obs/joint_state/torso/joint_position'][:]
     left_pos = ep_group['obs/joint_state/left_arm/joint_position'][:,:-1] # discard last dim
     left_gripper_pos = ep_group['obs/gripper_state/left_gripper/gripper_position'][:] / 100.0 # normalize to 0-1
@@ -259,7 +259,7 @@ def add_episode_from_hdf5(
 
     print(f"Episode {ep_idx} from group {ep_group.name} added to ds.")
 
-def convert_single_hdf5_to_lerobot(raw_dir: Path, ds: LeRobotDataset, fps: int = 30, normalize: bool = False):
+def convert_single_hdf5_to_lerobot(raw_path: Path, task_name: str, ds: LeRobotDataset, fps: int = 30, normalize: bool = False):
     """
     Finds a .hdf5 file in raw_dir, derives task from its filename, 
     iterates over each 'demo_*' group (episode) in the file, 
@@ -271,15 +271,8 @@ def convert_single_hdf5_to_lerobot(raw_dir: Path, ds: LeRobotDataset, fps: int =
             via LeRobotDataset.create(...).
         fps: Frame rate to associate with each episode.
     """
-    # 1. Find the .hdf5 files in raw_dir
-    hdf5_files = list(raw_dir.glob("*.hdf5"))
-    if not hdf5_files:
-        raise ValueError(f"No .hdf5 files found in {raw_dir}")
-
-    # 2. For now, pick the first file => single task
-    hdf5_path = hdf5_files[0]
+    hdf5_path = raw_path
     # task_name = hdf5_path.stem  # e.g. "task_name" from "task_name.hdf5"
-    task_name = "organize shelf"
     print(f"Processing task: {task_name} from {hdf5_path}")
 
     # 3. Open the file
@@ -314,11 +307,13 @@ def convert_single_hdf5_to_lerobot(raw_dir: Path, ds: LeRobotDataset, fps: int =
 
     print("Done adding all episodes. You can now ds.consolidate() and ds.push_to_hub() if you like.")
 
-def main(normalize=False):
+def main(repo_id: str, 
+         raw_path: str,
+         task_name: str,
+         normalize: bool = False):
     features = create_r1_features_for_lerobot()
-    # from IPython import embed; embed(); exit(0)
 
-    repo_id = "s-tian/galaxea-r1-shelf-full-normalized_pc"
+    # repo_id = "s-tian/galaxea-r1-shelf-full-normalized_pc"
     # repo_id = "Yiheyihe/galaxea-r1-shelf-full-normalized"
     # repo_id = "Yiheyihe/galaxea-r1-shelf-debug-normalized"
     # repo_id = "Yiheyihe/galaxea-r1-shelf-debug-pi0Jax"
@@ -334,7 +329,7 @@ def main(normalize=False):
     #     root="/viscam/u/stian/lerobot/s-tian/galaxea-r1-shelf-full-normalized",
     # )
 
-    raw_dir = Path("/viscam/projects/3dvla/")
+    raw_path = Path(raw_path)
 
     # dataset_path = Path(os.path.join("/svl/u/stian/lerobot/.hf_cache/lerobot/", repo_id))
     # # remove the dataset_path if it exists
@@ -342,7 +337,7 @@ def main(normalize=False):
     #     print(f"Removing existing dataset at {dataset_path}")
     #     shutil.rmtree(dataset_path)
 
-    convert_single_hdf5_to_lerobot(raw_dir, ds, normalize=normalize)
+    convert_single_hdf5_to_lerobot(raw_path, task_name, ds, normalize=normalize)
 
     # from IPython import embed; embed(); exit(0)
     # ds.consolidate()
@@ -350,4 +345,16 @@ def main(normalize=False):
 
     
 if __name__ == "__main__":
-    main(normalize=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo_id", type=str, default="s-tian/galaxea-r1-shelf-full-normalized_pc", 
+                        help="huggingface repo name to upload to")
+    parser.add_argument("--hdf5_path", type=str, default="/viscam/projects/3dvla/", 
+                        help="Path to the directory containing HDF5 files")
+    parser.add_argument("--task_name", type=str, default="shelf", 
+                        help="Task name to use for the dataset")
+
+    args = parser.parse_args()
+    main(repo_id=args.repo_id, 
+         raw_path=args.hdf5_path, 
+         task_name=args.task_name, 
+         normalize=True)
