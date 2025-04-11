@@ -12,7 +12,7 @@
 # Training with R1 dataset
 python lerobot/scripts/train.py \
 --policy.path=lerobot/pi0 \
---dataset.repo_id=s-tian/galaxea-r1-shelf-full-normalized_pc \
+--dataset.repo_id=s-tian/galaxea_r1_cup \
 --batch_size=8 \
 --policy.use_3d=true \
 --policy.use_2d=false

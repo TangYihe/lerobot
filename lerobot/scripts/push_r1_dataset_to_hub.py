@@ -175,7 +175,7 @@ def add_episode_from_hdf5(
     left_gripper_action = ep_group['action/left_gripper'][:] / 100.0 # normalize to 0-1
     right_gripper_action = ep_group['action/right_gripper'][:] / 100.0
     # state data
-    base_vel = ep_group['obs/odom/linear_velocity'][:]
+    base_vel = ep_group['obs/odom/base_velocity'][:]
     torso_pos = ep_group['obs/joint_state/torso/joint_position'][:]
     left_pos = ep_group['obs/joint_state/left_arm/joint_position'][:,:-1] # discard last dim
     left_gripper_pos = ep_group['obs/gripper_state/left_gripper/gripper_position'][:] / 100.0 # normalize to 0-1
